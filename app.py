@@ -3,43 +3,43 @@ import requests
 import pandas as pd
 from konlpy.tag import Okt
 from collections import Counter
-import matplotlib.pyplot as plt
-from wordcloud import WordCloud
-import os
+import datetime
 
 # 1. 페이지 설정
-st.set_page_config(page_title="네이버 키워드 분석기", layout="wide")
+st.set_page_config(page_title="네이버 여론 분석 대시보드", layout="wide")
 
-# 2. 한글 폰트 경로 설정 (서버 환경에 맞춰 자동 탐색)
-def get_font_path():
-    # 방법 1: 직접 올린 폰트 파일 확인
-    if os.path.exists('NanumGothic.ttf'):
-        return 'NanumGothic.ttf'
-    # 방법 2: 서버 시스템 폰트 확인 (packages.txt 설치 시)
-    system_font = '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'
-    if os.path.exists(system_font):
-        return system_font
-    return None
+# 2. API 키 자동 로드 (Secrets 우선, 없으면 사이드바)
+naver_id = st.secrets.get("NAVER_CLIENT_ID", "")
+naver_secret = st.secrets.get("NAVER_CLIENT_SECRET", "")
 
-# 3. API 키 설정 (Secrets 활용)
-try:
-    naver_id = st.secrets["NAVER_CLIENT_ID"]
-    naver_secret = st.secrets["NAVER_CLIENT_SECRET"]
-except:
+if not naver_id:
     with st.sidebar:
         st.header("🔑 API 설정")
         naver_id = st.text_input("Naver Client ID", type="password")
         naver_secret = st.text_input("Naver Client Secret", type="password")
 
-st.title("📊 네이버 키워드 분석 대시보드")
-target_keyword = st.text_input("분석할 키워드를 입력하세요", value="티스템")
+# 3. 사이드바 - 검색 옵션 (기간 및 출처)
+with st.sidebar:
+    st.header("⚙️ 검색 설정")
+    source_type = st.radio("출처 선택", ["블로그", "카페"])
+    source_api = "blog" if source_type == "블로그" else "cafearticle"
+    
+    today = datetime.date.today()
+    start_date = st.date_input("시작일", today - datetime.timedelta(days=30))
+    end_date = st.date_input("종료일", today)
+    
+    display_num = st.slider("수집 개수", 10, 100, 50)
 
-if st.button("분석 시작🚀"):
+# 4. 메인 화면
+st.title(f"🔍 '{source_type}' 여론 상세 분석")
+target_keyword = st.text_input("분석 키워드", value="티스템")
+
+if st.button("데이터 분석 시작 🚀"):
     if not naver_id or not naver_secret:
-        st.warning("네이버 API 키를 설정해주세요.")
+        st.error("API 키를 설정해주세요.")
     else:
-        with st.spinner('데이터를 분석 중입니다...'):
-            url = f"https://openapi.naver.com/v1/search/blog?query={target_keyword}&display=100&sort=sim"
+        with st.spinner('네이버 데이터를 분석 중입니다...'):
+            url = f"https://openapi.naver.com/v1/search/{source_api}?query={target_keyword}&display={display_num}&sort=sim"
             headers = {"X-Naver-Client-Id": naver_id, "X-Naver-Client-Secret": naver_secret}
             res = requests.get(url, headers=headers)
 
@@ -47,46 +47,56 @@ if st.button("분석 시작🚀"):
                 items = res.json().get('items', [])
                 if items:
                     df = pd.DataFrame(items)
-                    df['clean_desc'] = df['description'].str.replace('<b>','').replace('</b>','').replace('&quot;','')
+                    # 데이터 정제
+                    df['clean_desc'] = df['description'].str.replace('<b>','').str.replace('</b>','').str.replace('&quot;','')
+                    all_text = " ".join(df['clean_desc'].tolist())
                     
                     # 형태소 분석
                     okt = Okt()
-                    all_text = " ".join(df['clean_desc'].tolist())
                     nouns = [n for n in okt.nouns(all_text) if len(n) > 1 and n != target_keyword]
                     
-                    # 시각화 배치
-                    col1, col2 = st.columns(2)
+                    # 분석 데이터 1: 연관어 Top 10
+                    top_nouns = Counter(nouns).most_common(10)
+                    
+                    # 분석 데이터 2: 긍/부정어 순위 (사전 확장)
+                    pos_dict = ['효과', '추천', '만족', '성공', '좋은', '개선', '강추', '도움', '혁신', '정상']
+                    neg_dict = ['부작용', '비싼', '부담', '실패', '아쉬운', '통증', '주의', '논란', '힘든', '어려운']
+                    
+                    pos_found = [w for w in okt.morphs(all_text) if w in pos_dict]
+                    neg_found = [w for w in okt.morphs(all_text) if w in neg_dict]
+                    
+                    top_pos = Counter(pos_found).most_common(10)
+                    top_neg = Counter(neg_found).most_common(10)
+
+                    # --- 결과 화면 배치 ---
+                    col1, col2, col3 = st.columns(3)
                     
                     with col1:
-                        st.subheader("📌 주요 키워드")
-                        if nouns:
-                            word_counts = Counter(nouns)
-                            f_path = get_font_path()
-                            if f_path:
-                                wc = WordCloud(font_path=f_path, background_color='white', width=800, height=500).generate_from_frequencies(word_counts)
-                                fig_wc, ax_wc = plt.subplots()
-                                ax_wc.imshow(wc, interpolation='bilinear')
-                                ax_wc.axis('off')
-                                st.pyplot(fig_wc)
-                            else:
-                                st.error("한글 폰트를 찾을 수 없습니다. packages.txt에 fonts-nanum을 추가하거나 NanumGothic.ttf 파일을 업로드하세요.")
+                        st.subheader("🔝 주요 연관어 Top 10")
+                        if top_nouns:
+                            res_df = pd.DataFrame(top_nouns, columns=['키워드', '빈도'])
+                            st.table(res_df)
                         else:
-                            st.write("키워드가 추출되지 않았습니다.")
+                            st.write("데이터 부족")
 
                     with col2:
-                        st.subheader("⚖️ 긍/부정 비율")
-                        pos_words = ['효과', '추천', '만족', '성공', '좋은', '개선']
-                        neg_words = ['부작용', '비싼', '부담', '실패', '아쉬운', '통증']
-                        pos_score = sum(all_text.count(w) for w in pos_words)
-                        neg_score = sum(all_text.count(w) for w in neg_words)
-                        
-                        if pos_score + neg_score > 0:
-                            fig_pie, ax_pie = plt.subplots()
-                            ax_pie.pie([pos_score, neg_score], labels=['긍정', '부정'], autopct='%1.1f%%', colors=['#4CAF50', '#F44336'], startangle=90)
-                            st.pyplot(fig_pie)
+                        st.subheader("😊 긍정어 순위")
+                        if top_pos:
+                            st.table(pd.DataFrame(top_pos, columns=['단어', '빈도']))
                         else:
-                            st.write("감성 데이터가 부족합니다.")
+                            st.write("긍정 키워드 없음")
+
+                    with col3:
+                        st.subheader("😟 부정어 순위")
+                        if top_neg:
+                            st.table(pd.DataFrame(top_neg, columns=['단어', '빈도']))
+                        else:
+                            st.write("부정 키워드 없음")
+
+                    st.markdown("---")
+                    st.subheader(f"🌐 {source_type} 원문 데이터 (기간: {start_date} ~ {end_date})")
+                    st.dataframe(df[['title', 'link', 'clean_desc']].rename(columns={'clean_desc': '요약 내용'}))
                 else:
                     st.error("검색 결과가 없습니다.")
             else:
-                st.error(f"API 에러: {res.status_code}")
+                st.error(f"API 호출 실패: {res.status_code}")
