@@ -26,7 +26,7 @@ with st.sidebar:
     st.header("🔑 API 설정")
     naver_id = st.text_input("Naver Client ID", type="password")
     naver_secret = st.text_input("Naver Client Secret", type="password")
-    st.write("작성자: 류형도")
+    st.write("작성자: 이찬범")
 
 # 3. 메인 화면
 st.title("📊 네이버 키워드 분석 대시보드")
@@ -95,3 +95,4 @@ if st.button("분석 시작🚀"):
                     st.dataframe(df[['title', 'clean_desc']].rename(columns={'clean_desc': '내용'}))
             else:
                 st.error(f"API 호출 실패 (에러코드: {res.status_code})")
+
