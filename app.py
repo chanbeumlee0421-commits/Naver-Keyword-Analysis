@@ -8,7 +8,7 @@ from wordcloud import WordCloud
 import platform
 
 # 1. 페이지 설정 및 한글 폰트 설정
-st.set_page_config(page_title="네이버 키워드 분석기", layout="wide")
+st.set_page_config(page_title="경보제약 동물사업부 네이버 키워드 분석", layout="wide")
 
 def set_korean_font():
     if platform.system() == 'Windows':
@@ -95,4 +95,5 @@ if st.button("분석 시작🚀"):
                     st.dataframe(df[['title', 'clean_desc']].rename(columns={'clean_desc': '내용'}))
             else:
                 st.error(f"API 호출 실패 (에러코드: {res.status_code})")
+
 
